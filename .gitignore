@@ -1,0 +1,11 @@
+uploads/
+*.xlsx
+*.csv
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+.env.local

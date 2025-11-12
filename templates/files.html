@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Files | Feedback Processor</title>
+    
+    <!-- Font Awesome for Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            width: 100%;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f5f5 0%, #e8f5e9 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #00b050 0%, #008a3d 100%);
+            padding: 18px 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .navbar h1 {
+            font-size: 26px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: white;
+            font-weight: 700;
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .navbar h1 i {
+            font-size: 28px;
+        }
+
+        .navbar-links {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .navbar a {
+            background-color: rgba(255, 255, 255, 0.15);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            white-space: nowrap;
+        }
+
+        .navbar a:hover {
+            background-color: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 30px 15px;
+            width: 100%;
+            overflow-y: auto;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            padding: 40px 35px;
+            border-top: 5px solid #00b050;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header-section {
+            text-align: center;
+            margin-bottom: 35px;
+            border-bottom: 2px solid #e8f5e9;
+            padding-bottom: 25px;
+        }
+
+        .icon-files {
+            font-size: 50px;
+            color: #00b050;
+            margin-bottom: 15px;
+            display: inline-block;
+        }
+
+        .header-section h1 {
+            color: #1a1a1a;
+            font-size: 28px;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        .header-section p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .search-container {
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 12px 15px 12px 40px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            background-color: #f9f9f9;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #00b050;
+            background-color: white;
+            box-shadow: 0 0 0 3px rgba(0, 176, 80, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #00b050;
+            font-size: 16px;
+            pointer-events: none;
+        }
+
+        .clear-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+            transition: all 0.3s ease;
+        }
+
+        .clear-btn:hover {
+            color: #00b050;
+        }
+
+        .search-box:not(:placeholder-shown) ~ .clear-btn {
+            display: block;
+        }
+
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .file-item {
+            background-color: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 18px;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 15px;
+            align-items: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .file-item:hover {
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            background-color: #ffffff;
+            border-color: #00b050;
+        }
+
+        .file-item.deleting {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .file-details {
+            min-width: 0;
+        }
+
+        .file-name {
+            color: #1a1a1a;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 10px;
+            word-break: break-word;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow-wrap: break-word;
+        }
+
+        .file-name i {
+            color: #00b050;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .file-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+            color: #888;
+            flex-wrap: wrap;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .meta-item i {
+            color: #00b050;
+            font-size: 13px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .btn-action {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-download {
+            background-color: #00b050;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background-color: #008a3d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 176, 80, 0.3);
+        }
+
+        .btn-delete {
+            background-color: #c00000;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background-color: #a00000;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(192, 0, 0, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: #888;
+        }
+
+        .empty-state i {
+            font-size: 70px;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .empty-state .sub-text {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        .no-results i {
+            font-size: 60px;
+            color: #ddd;
+            margin-bottom: 15px;
+        }
+
+        .no-results p {
+            font-size: 15px;
+            margin-bottom: 10px;
+        }
+
+        .no-results .sub-text {
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 25px;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 50px 20px;
+            color: #00b050;
+        }
+
+        .loading-spinner i {
+            font-size: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-spinner p {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .error-message {
+            background-color: rgba(192, 0, 0, 0.1);
+            color: #c00000;
+            border-left: 4px solid #c00000;
+            padding: 15px 20px;
+            border-radius: 6px;
+            text-align: center;
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .error-message i {
+            font-size: 16px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #00b050;
+            background-color: white;
+            color: #00b050;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 13px;
+            min-width: 38px;
+        }
+
+        .pagination button.active {
+            background-color: #00b050;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 176, 80, 0.2);
+        }
+
+        .pagination button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(0, 176, 80, 0.3);
+        }
+
+        .results-header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+            display: none;
+        }
+
+        .results-header.show {
+            display: block;
+        }
+
+        .results-header p {
+            color: #666;
+            font-size: 14px;
+            margin: 0;
+        }
+
+        .results-header .count {
+            font-weight: 600;
+            color: #00b050;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast {
+            background-color: #ffffff;
+            padding: 16px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            min-width: 300px;
+            animation: slideInRight 0.3s ease-out;
+            pointer-events: all;
+            border-left: 4px solid;
+        }
+
+        .toast.success {
+            border-left-color: #00b050;
+        }
+
+        .toast.success i {
+            color: #00b050;
+            font-size: 18px;
+        }
+
+        .toast.error {
+            border-left-color: #c00000;
+        }
+
+        .toast.error i {
+            color: #c00000;
+            font-size: 18px;
+        }
+
+        .toast.info {
+            border-left-color: #0078d4;
+        }
+
+        .toast.info i {
+            color: #0078d4;
+            font-size: 18px;
+        }
+
+        .toast-message {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .toast-close:hover {
+            color: #00b050;
+        }
+
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+        }
+
+        .toast.removing {
+            animation: slideOutRight 0.3s ease-out;
+        }
+
+        /* Delete Confirmation Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .modal-content {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .modal-header i {
+            font-size: 24px;
+            color: #c00000;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #1a1a1a;
+            font-weight: 700;
+        }
+
+        .modal-body {
+            margin-bottom: 25px;
+        }
+
+        .modal-body p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        .file-to-delete {
+            background-color: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            word-break: break-all;
+            font-weight: 600;
+            color: #1a1a1a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-to-delete i {
+            color: #00b050;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .modal-btn-cancel {
+            background-color: #f0f0f0;
+            color: #1a1a1a;
+            border: 1px solid #e0e0e0;
+        }
+
+        .modal-btn-cancel:hover {
+            background-color: #e0e0e0;
+        }
+
+        .modal-btn-delete {
+            background-color: #c00000;
+            color: white;
+            box-shadow: 0 2px 8px rgba(192, 0, 0, 0.2);
+        }
+
+        .modal-btn-delete:hover {
+            background-color: #a00000;
+            box-shadow: 0 4px 12px rgba(192, 0, 0, 0.3);
+        }
+
+        .modal-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Tablet and below */
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 12px 20px;
+                gap: 10px;
+            }
+
+            .navbar h1 {
+                font-size: 20px;
+                min-width: auto;
+            }
+
+            .navbar h1 i {
+                font-size: 24px;
+            }
+
+            .navbar a {
+                padding: 8px 14px;
+                font-size: 12px;
+            }
+
+            .main-container {
+                padding: 20px 10px;
+            }
+
+            .container {
+                padding: 30px 20px;
+            }
+
+            .header-section h1 {
+                font-size: 24px;
+            }
+
+            .icon-files {
+                font-size: 40px;
+            }
+
+            .file-item {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .file-actions {
+                width: 100%;
+            }
+
+            .btn-action {
+                flex: 1;
+                justify-content: center;
+                padding: 8px 10px;
+                font-size: 11px;
+            }
+
+            .file-meta {
+                gap: 12px;
+                font-size: 11px;
+            }
+
+            .file-name {
+                font-size: 13px;
+            }
+
+            .empty-state {
+                padding: 60px 20px;
+            }
+
+            .empty-state i {
+                font-size: 50px;
+            }
+
+            .toast {
+                min-width: 280px;
+            }
+
+            .toast-container {
+                right: 10px;
+                left: 10px;
+            }
+
+            .toast {
+                margin-bottom: 10px;
+            }
+
+            .modal-content {
+                max-width: 90%;
+            }
+        }
+
+        /* Small devices */
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 10px 15px;
+                gap: 8px;
+            }
+
+            .navbar h1 {
+                font-size: 16px;
+                width: 100%;
+                order: 1;
+            }
+
+            .navbar-links {
+                order: 2;
+                width: 100%;
+                gap: 8px;
+            }
+
+            .navbar a {
+                flex: 1;
+                justify-content: center;
+                padding: 7px 10px;
+                font-size: 11px;
+                gap: 5px;
+            }
+
+            .navbar a i {
+                display: none;
+            }
+
+            .main-container {
+                padding: 15px 8px;
+            }
+
+            .container {
+                padding: 20px 15px;
+            }
+
+            .header-section {
+                margin-bottom: 25px;
+                padding-bottom: 20px;
+            }
+
+            .header-section h1 {
+                font-size: 20px;
+            }
+
+            .header-section p {
+                font-size: 13px;
+            }
+
+            .icon-files {
+                font-size: 35px;
+            }
+
+            .search-box {
+                padding: 10px 12px 10px 35px;
+                font-size: 13px;
+            }
+
+            .search-icon {
+                left: 10px;
+                font-size: 14px;
+            }
+
+            .clear-btn {
+                right: 10px;
+                font-size: 14px;
+            }
+
+            .file-item {
+                padding: 15px;
+                gap: 10px;
+            }
+
+            .file-name {
+                font-size: 12px;
+                gap: 8px;
+            }
+
+            .file-name i {
+                font-size: 16px;
+            }
+
+            .file-meta {
+                gap: 10px;
+                font-size: 10px;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .meta-item {
+                width: 100%;
+            }
+
+            .file-actions {
+                width: 100%;
+                gap: 6px;
+            }
+
+            .btn-action {
+                padding: 7px 8px;
+                font-size: 10px;
+            }
+
+            .btn-action i {
+                display: none;
+            }
+
+            .pagination button {
+                padding: 6px 10px;
+                font-size: 12px;
+                min-width: 34px;
+            }
+
+            .empty-state {
+                padding: 50px 15px;
+            }
+
+            .empty-state i {
+                font-size: 40px;
+            }
+
+            .empty-state p {
+                font-size: 14px;
+            }
+
+            .toast {
+                min-width: auto;
+            }
+
+            .toast-container {
+                right: 10px;
+                left: 10px;
+                top: 10px;
+            }
+
+            .modal-content {
+                padding: 20px;
+            }
+
+            .modal-btn {
+                padding: 8px 16px;
+                font-size: 13px;
+            }
+        }
+
+        /* Extra small devices */
+        @media (max-width: 360px) {
+            .navbar h1 {
+                font-size: 14px;
+            }
+
+            .container {
+                padding: 15px 10px;
+            }
+
+            .file-item {
+                padding: 12px;
+            }
+
+            .file-name {
+                font-size: 11px;
+            }
+
+            .btn-action {
+                padding: 6px 6px;
+                font-size: 9px;
+            }
+
+            .modal-content {
+                padding: 15px;
+            }
+
+            .modal-header h2 {
+                font-size: 16px;
+            }
+
+            .modal-body p {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <div class="navbar">
+        <h1>
+            <i class="fas fa-folder-open"></i> My Files
+        </h1>
+        <div class="navbar-links">
+            <a href="/">
+                <i class="fas fa-cloud-upload-alt"></i> <span>Upload</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <div class="container">
+            <!-- Header Section -->
+            <div class="header-section">
+                <div class="icon-files">
+                    <i class="fas fa-file-excel"></i>
+                </div>
+                <h1>Your Files</h1>
+                <p>Search to view and manage your processed files</p>
+            </div>
+
+            <!-- Search Container -->
+            <div class="search-container">
+                <i class="fas fa-search search-icon"></i>
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    class="search-box" 
+                    placeholder="Search files by name..."
+                    autocomplete="off"
+                >
+                <button class="clear-btn" id="clearBtn" title="Clear search">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorContainer" style="display: none;">
+                <div class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <span id="errorText">Error loading files</span>
+                </div>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div class="loading-spinner" id="loadingSpinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading your files...</p>
+            </div>
+
+            <!-- Empty State (before search) -->
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <i class="fas fa-search"></i>
+                <p>Start searching</p>
+                <p class="sub-text">Type a file name to see results</p>
+            </div>
+
+            <!-- Results Header -->
+            <div class="results-header" id="resultsHeader">
+                <p>Found <span class="count" id="resultsCount">0</span> file(s)</p>
+            </div>
+
+            <!-- File List -->
+            <div class="file-list" id="fileList" style="display: none;"></div>
+
+            <!-- No Results Message -->
+            <div class="no-results" id="noResults" style="display: none;">
+                <i class="fas fa-inbox"></i>
+                <p>No files found</p>
+                <p class="sub-text">Try a different search term</p>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="pagination" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fas fa-trash"></i>
+                <h2>Delete File</h2>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this file?</p>
+                <div class="file-to-delete">
+                    <i class="fas fa-file-excel"></i>
+                    <span id="deleteFileName">filename.xlsx</span>
+                </div>
+                <p style="margin-top: 12px; color: #c00000; font-size: 12px;">
+                    <i class="fas fa-exclamation-circle"></i> This action cannot be undone.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn modal-btn-cancel" id="cancelBtn">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button class="modal-btn modal-btn-delete" id="confirmDeleteBtn">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script>
+        let allFiles = [];
+        let filteredFiles = [];
+        const filesPerPage = 10;
+        let currentPage = 1;
+        let searchQuery = '';
+        let isSearching = false;
+        let deleteFileData = null;
+
+        // Load files on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Health check first
+            fetch('/api/health')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Health check:', data);
+                    if (data.status !== 'healthy') {
+                        console.warn('MongoDB connection issue:', data);
+                    }
+                    loadFiles();
+                })
+                .catch(error => {
+                    console.error('Health check failed:', error);
+                    loadFiles();
+                });
+
+            // Search input listeners
+            const searchInput = document.getElementById('searchInput');
+            const clearBtn = document.getElementById('clearBtn');
+
+            searchInput.addEventListener('input', handleSearch);
+            clearBtn.addEventListener('click', clearSearch);
+
+            // Modal listeners
+            const deleteModal = document.getElementById('deleteModal');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+            cancelBtn.addEventListener('click', closeDeleteModal);
+            confirmDeleteBtn.addEventListener('click', performDelete);
+            deleteModal.addEventListener('click', (e) => {
+                if (e.target === deleteModal) {
+                    closeDeleteModal();
+                }
+            });
+        });
+
+        function loadFiles() {
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const fileList = document.getElementById('fileList');
+            const emptyState = document.getElementById('emptyState');
+            const errorContainer = document.getElementById('errorContainer');
+
+            loadingSpinner.style.display = 'block';
+            fileList.style.display = 'none';
+            emptyState.style.display = 'none';
+            errorContainer.style.display = 'none';
+
+            fetch('/api/files')
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Response data:', data);
+                    loadingSpinner.style.display = 'none';
+
+                    if (data.success === false) {
+                        throw new Error(data.error || 'Failed to load files');
+                    }
+
+                    if (!data.files || data.files.length === 0) {
+                        emptyState.style.display = 'block';
+                        emptyState.innerHTML = `
+                            <i class="fas fa-inbox"></i>
+                            <p>No files uploaded yet</p>
+                            <p class="sub-text">Upload a CSV file to get started</p>
+                        `;
+                        return;
+                    }
+
+                    allFiles = data.files.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
+                    emptyState.style.display = 'block';
+                    emptyState.innerHTML = `
+                        <i class="fas fa-search"></i>
+                        <p>Start searching</p>
+                        <p class="sub-text">Type a file name to see results</p>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Error loading files:', error);
+                    loadingSpinner.style.display = 'none';
+                    errorContainer.style.display = 'block';
+                    document.getElementById('errorText').textContent = `Error: ${error.message}`;
+                });
+        }
+
+        function handleSearch(e) {
+            searchQuery = e.target.value.trim().toLowerCase();
+            const fileList = document.getElementById('fileList');
+            const emptyState = document.getElementById('emptyState');
+            const noResults = document.getElementById('noResults');
+            const resultsHeader = document.getElementById('resultsHeader');
+
+            if (searchQuery.length === 0) {
+                isSearching = false;
+                fileList.style.display = 'none';
+                noResults.style.display = 'none';
+                resultsHeader.classList.remove('show');
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = `
+                    <i class="fas fa-search"></i>
+                    <p>Start searching</p>
+                    <p class="sub-text">Type a file name to see results</p>
+                `;
+                return;
+            }
+
+            isSearching = true;
+
+            // Filter files based on search query
+            filteredFiles = allFiles.filter(file => {
+                const filename = (file.filename || '').toLowerCase();
+                return filename.includes(searchQuery);
+            });
+
+            currentPage = 1;
+            renderSearchResults();
+        }
+
+        function renderSearchResults() {
+            const fileList = document.getElementById('fileList');
+            const noResults = document.getElementById('noResults');
+            const emptyState = document.getElementById('emptyState');
+            const resultsHeader = document.getElementById('resultsHeader');
+
+            emptyState.style.display = 'none';
+
+            if (filteredFiles.length === 0) {
+                fileList.style.display = 'none';
+                noResults.style.display = 'block';
+                resultsHeader.classList.remove('show');
+                return;
+            }
+
+            fileList.style.display = 'flex';
+            noResults.style.display = 'none';
+            resultsHeader.classList.add('show');
+            document.getElementById('resultsCount').textContent = filteredFiles.length;
+
+            // Pagination
+            const totalPages = Math.ceil(filteredFiles.length / filesPerPage);
+            const startIndex = (currentPage - 1) * filesPerPage;
+            const paginatedFiles = filteredFiles.slice(startIndex, startIndex + filesPerPage);
+
+            fileList.innerHTML = '';
+
+            paginatedFiles.forEach((file, index) => {
+                try {
+                    // Handle missing or invalid data
+                    const filename = file.filename || 'unknown_file.xlsx';
+                    const fileSize = file.file_size ? (file.file_size / 1024).toFixed(2) : '0';
+                    const uploadDateStr = file.upload_date || new Date().toISOString();
+                    
+                    const uploadDate = new Date(uploadDateStr).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                    const uploadTime = new Date(uploadDateStr).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.id = `file-${file._id}`;
+                    
+                    // Highlight matching text
+                    const highlightedName = highlightMatch(filename, searchQuery);
+
+                    fileItem.innerHTML = `
+                        <div class="file-details">
+                            <div class="file-name">
+                                <i class="fas fa-file-excel"></i><span>${highlightedName}</span>
+                            </div>
+                            <div class="file-meta">
+                                <div class="meta-item">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span>${uploadDate} at ${uploadTime}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-database"></i>
+                                    <span>${fileSize} KB</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="file-actions">
+                            <a href="/download/${file._id}" class="btn-action btn-download" title="Download" onclick="showDownloadToast(event)">
+                                <i class="fas fa-download"></i> Download
+                            </a>
+                            <button class="btn-action btn-delete" onclick="openDeleteModal('${file._id}', '${escapeHtml(filename)}')" title="Delete">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    `;
+                    fileList.appendChild(fileItem);
+                } catch (error) {
+                    console.error('Error rendering file item:', error, file);
+                }
+            });
+
+            // Render pagination
+            renderPagination(totalPages);
+        }
+
+        function highlightMatch(text, query) {
+            if (!query) return escapeHtml(text);
+            const regex = new RegExp(`(${query})`, 'gi');
+            const escaped = escapeHtml(text);
+            return escaped.replace(regex, '<span style="color: #00b050; font-weight: 700;">$1</span>');
+        }
+
+        function renderPagination(totalPages) {
+            const pagination = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                pagination.style.display = 'none';
+                return;
+            }
+
+            pagination.style.display = 'flex';
+            pagination.innerHTML = '';
+
+            // Previous button
+            if (currentPage > 1) {
+                const prevBtn = document.createElement('button');
+                prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+                prevBtn.onclick = () => {
+                    currentPage--;
+                    renderSearchResults();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                pagination.appendChild(prevBtn);
+            }
+
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                btn.className = i === currentPage ? 'active' : '';
+                btn.onclick = () => {
+                    currentPage = i;
+                    renderSearchResults();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                pagination.appendChild(btn);
+            }
+
+            // Next button
+            if (currentPage < totalPages) {
+                const nextBtn = document.createElement('button');
+                nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                nextBtn.onclick = () => {
+                    currentPage++;
+                    renderSearchResults();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                pagination.appendChild(nextBtn);
+            }
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            searchQuery = '';
+            isSearching = false;
+            const fileList = document.getElementById('fileList');
+            const noResults = document.getElementById('noResults');
+            const emptyState = document.getElementById('emptyState');
+            const resultsHeader = document.getElementById('resultsHeader');
+
+            fileList.style.display = 'none';
+            noResults.style.display = 'none';
+            resultsHeader.classList.remove('show');
+            emptyState.style.display = 'block';
+            emptyState.innerHTML = `
+                <i class="fas fa-search"></i>
+                <p>Start searching</p>
+                <p class="sub-text">Type a file name to see results</p>
+            `;
+            currentPage = 1;
+        }
+
+        function openDeleteModal(fileId, filename) {
+            deleteFileData = { fileId, filename };
+            document.getElementById('deleteFileName').textContent = filename;
+            document.getElementById('deleteModal').classList.add('show');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('show');
+            deleteFileData = null;
+        }
+
+        function performDelete() {
+            if (!deleteFileData) return;
+
+            const { fileId, filename } = deleteFileData;
+            const confirmBtn = document.getElementById('confirmDeleteBtn');
+            const fileItem = document.getElementById(`file-${fileId}`);
+
+            // Disable button and show loading
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deleting...';
+
+            // Add deleting class to file item
+            if (fileItem) {
+                fileItem.classList.add('deleting');
+            }
+
+            fetch(`/api/files/${fileId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+
+                if (data.success) {
+                    closeDeleteModal();
+                    showToast('File deleted successfully', 'success');
+                    
+                    // Remove file from filtered list
+                    filteredFiles = filteredFiles.filter(f => f._id !== fileId);
+                    
+                    // Update results count
+                    if (filteredFiles.length === 0) {
+                        const resultsHeader = document.getElementById('resultsHeader');
+                        const fileList = document.getElementById('fileList');
+                        const noResults = document.getElementById('noResults');
+                        
+                        fileList.style.display = 'none';
+                        noResults.style.display = 'block';
+                        resultsHeader.classList.remove('show');
+                    } else {
+                        // Re-render current page
+                        currentPage = 1;
+                        renderSearchResults();
+                    }
+                } else {
+                    showToast('Error deleting file: ' + data.message, 'error');
+                    if (fileItem) {
+                        fileItem.classList.remove('deleting');
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting file:', error);
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+                showToast('Error deleting file. Please try again.', 'error');
+                if (fileItem) {
+                    fileItem.classList.remove('deleting');
+                }
+            });
+        }
+
+        function showDownloadToast(e) {
+            // Allow the download to happen
+            setTimeout(() => {
+                showToast('File downloaded successfully', 'success');
+            }, 500);
+        }
+
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+
+            let icon = 'fa-info-circle';
+            if (type === 'success') {
+                icon = 'fa-check-circle';
+            } else if (type === 'error') {
+                icon = 'fa-exclamation-circle';
+            }
+
+            toast.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <span class="toast-message">${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+            toastContainer.appendChild(toast);
+
+            // Auto remove after 4 seconds
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.classList.add('removing');
+                    setTimeout(() => {
+                        if (toast.parentElement) {
+                            toast.remove();
+                        }
+                    }, 300);
+                }
+            }, 4000);
+        }
+
+        function escapeHtml(text) {
+            if (!text || text === undefined || text === null) {
+                return 'unknown_file.xlsx';
+            }
+            
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Auto-refresh files every 30 seconds
+        setInterval(loadFiles, 30000);
+    </script>
+</body>
+</html>
