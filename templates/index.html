@@ -267,6 +267,139 @@
             color: #00b050;
         }
 
+        /* Toast Styles */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            min-width: 300px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .toast::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            border-radius: 8px 0 0 8px;
+        }
+
+        .toast.success {
+            border-left: 4px solid #00b050;
+        }
+
+        .toast.success::before {
+            background-color: #00b050;
+        }
+
+        .toast.success .toast-icon {
+            color: #00b050;
+        }
+
+        .toast.error {
+            border-left: 4px solid #c00000;
+        }
+
+        .toast.error::before {
+            background-color: #c00000;
+        }
+
+        .toast.error .toast-icon {
+            color: #c00000;
+        }
+
+        .toast.info {
+            border-left: 4px solid #0078d4;
+        }
+
+        .toast.info::before {
+            background-color: #0078d4;
+        }
+
+        .toast.info .toast-icon {
+            color: #0078d4;
+        }
+
+        .toast-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .toast-message {
+            color: #595959;
+            font-size: 13px;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: #595959;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 0;
+            flex-shrink: 0;
+            transition: color 0.2s;
+        }
+
+        .toast-close:hover {
+            color: #1a1a1a;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        .toast.closing {
+            animation: slideOut 0.3s ease-out forwards;
+        }
+
         @media (max-width: 600px) {
             .upload-container {
                 padding: 25px;
@@ -279,10 +412,23 @@
             .icon-upload {
                 font-size: 40px;
             }
+
+            .toast-container {
+                right: 10px;
+                left: 10px;
+            }
+
+            .toast {
+                min-width: auto;
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <div class="upload-container">
         <!-- Header Section -->
         <div class="header-section">
@@ -354,6 +500,43 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script>
         /* eslint-disable */
+        
+        // Toast Function
+        function showToast(title, message, type = 'success', duration = 5000) {
+            const toastContainer = document.getElementById('toastContainer');
+            
+            const toastDiv = document.createElement('div');
+            toastDiv.className = `toast ${type}`;
+            
+            let icon = 'fa-check-circle';
+            if (type === 'error') icon = 'fa-times-circle';
+            if (type === 'info') icon = 'fa-info-circle';
+            
+            toastDiv.innerHTML = `
+                <i class="fas ${icon} toast-icon"></i>
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+                <button class="toast-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            toastContainer.appendChild(toastDiv);
+            
+            const closeBtn = toastDiv.querySelector('.toast-close');
+            closeBtn.addEventListener('click', () => {
+                toastDiv.classList.add('closing');
+                setTimeout(() => toastDiv.remove(), 300);
+            });
+            
+            setTimeout(() => {
+                toastDiv.classList.add('closing');
+                setTimeout(() => toastDiv.remove(), 300);
+            }, duration);
+        }
+
         // Display file name in label
         $('#file').on('change', function() {
             let fileName = $(this).val().split('\\').pop();
@@ -362,6 +545,7 @@
                 $('#fileInfo').show();
                 $('#fileInfoText').text('File selected: ' + fileName);
                 $('#errorMessage').hide();
+                showToast('File Selected', `Ready to upload: ${fileName}`, 'info', 3000);
             }
         });
 
@@ -373,6 +557,7 @@
                 e.preventDefault();
                 $('#errorMessage').show();
                 $('#errorText').text('Please select a file before uploading.');
+                showToast('Error', 'Please select a file before uploading.', 'error');
                 return false;
             }
 
@@ -381,21 +566,26 @@
                 e.preventDefault();
                 $('#errorMessage').show();
                 $('#errorText').text('Please select a valid CSV file.');
+                showToast('Error', 'Please select a valid CSV file.', 'error');
                 return false;
             }
 
             $('#submitBtn').addClass('loading').prop('disabled', true);
             $('.btn-text').hide();
             $('#btnLoader').show();
+            
+            showToast('Uploading', `Processing ${fileName}...`, 'info');
 
             // Detect when download starts and hide loader
             var downloadTimer = setTimeout(function() {
                 hideLoader();
+                showToast('Success', 'File processed successfully! Download started.', 'success');
             }, 3000); // Hide after 3 seconds (adjust if needed)
 
             window.addEventListener('focus', function() {
                 clearTimeout(downloadTimer);
                 hideLoader();
+                showToast('Success', 'File processed successfully! Download started.', 'success');
             }, { once: true });
         });
 
