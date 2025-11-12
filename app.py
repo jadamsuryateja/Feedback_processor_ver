@@ -16,6 +16,7 @@ from bson.binary import Binary
 from bson.objectid import ObjectId
 import logging
 import time
+import socket
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -51,8 +52,7 @@ logger.info(f"Upload folder: {UPLOAD_FOLDER}")
 logger.info(f"Environment: {'VERCEL' if os.environ.get('VERCEL') else 'LOCAL'}")
 
 # MongoDB connection - HARDCODED URI
-# This is safe because it's a read-only feedback processing service
-MONGODB_URI = os.getenv('MONGODB_URI') or 'mongodb+srv://feedbackprocessing:surya1123@feedbackprocessing.cudqcoj.mongodb.net/?appName=feedbackprocessing'
+MONGODB_URI = os.getenv('MONGODB_URI') or 'mongodb+srv://feedbackprocessing:surya1123@feedbackprocessing.cudqcoj.mongodb.net/?appName=feedbackprocessing&retryWrites=true&w=majority'
 
 client = None
 db = None
@@ -61,7 +61,19 @@ files_collection = None
 logger.info(f"MongoDB URI set: {bool(MONGODB_URI)}")
 logger.info(f"MongoDB URI preview: {MONGODB_URI[:80]}...")
 
-def connect_to_mongodb():
+def test_network():
+    """Test basic network connectivity"""
+    try:
+        logger.info("Testing network connectivity to MongoDB...")
+        sock = socket.create_connection(("feedbackprocessing.cudqcoj.mongodb.net", 27017), timeout=5)
+        sock.close()
+        logger.info("✓ Network connectivity OK")
+        return True
+    except Exception as e:
+        logger.warning(f"⚠ Network test failed: {e}")
+        return False
+
+def connect_to_mongodb(retry_count=0, max_retries=3):
     """Connect to MongoDB with retry logic"""
     global client, db, files_collection
     
@@ -70,25 +82,30 @@ def connect_to_mongodb():
         return False
     
     try:
-        logger.info("Attempting MongoDB connection...")
+        logger.info(f"Attempting MongoDB connection (attempt {retry_count + 1}/{max_retries})...")
+        
+        # Test network first
+        test_network()
         
         client = MongoClient(
             MONGODB_URI,
-            serverSelectionTimeoutMS=20000,
-            connectTimeoutMS=25000,
-            socketTimeoutMS=25000,
+            serverSelectionTimeoutMS=30000,
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000,
             retryWrites=True,
-            maxPoolSize=10,
+            maxPoolSize=5,
             minPoolSize=1,
             ssl=True,
-            retryConnect=True,
-            waitQueueTimeoutMS=10000,
-            directConnection=False
+            tlsAllowInvalidCertificates=False,
+            authSource='admin',
+            authMechanism='SCRAM-SHA-1',
+            maxIdleTimeMS=45000,
+            waitQueueTimeoutMS=10000
         )
         
         # Test connection with timeout
-        logger.info("Testing MongoDB connection with ping...")
-        client.admin.command('ping', timeoutMS=20000)
+        logger.info("Testing MongoDB connection with admin ping...")
+        client.admin.command('ping')
         logger.info("✓ MongoDB ping successful!")
         
         # Access database
@@ -102,26 +119,30 @@ def connect_to_mongodb():
         
         return True
         
-    except ServerSelectionTimeoutError as e:
-        logger.error(f"✗ MongoDB server selection timeout: {e}")
+    except (ServerSelectionTimeoutError, ConnectionFailure, TimeoutError) as e:
+        logger.error(f"✗ MongoDB connection error (attempt {retry_count + 1}): {type(e).__name__}: {str(e)[:100]}")
         client = None
         db = None
         files_collection = None
+        
+        # Retry logic
+        if retry_count < max_retries - 1:
+            wait_time = 2 ** retry_count  # Exponential backoff
+            logger.info(f"Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+            return connect_to_mongodb(retry_count + 1, max_retries)
+        
         return False
-    except ConnectionFailure as e:
-        logger.error(f"✗ MongoDB connection failure: {e}")
-        client = None
-        db = None
-        files_collection = None
-        return False
+        
     except Exception as e:
-        logger.error(f"✗ MongoDB connection error: {e}", exc_info=True)
+        logger.error(f"✗ Unexpected MongoDB error: {type(e).__name__}: {str(e)}", exc_info=True)
         client = None
         db = None
         files_collection = None
         return False
 
 # Try to connect on startup
+logger.info("Starting MongoDB connection attempt on app startup...")
 try:
     connect_to_mongodb()
 except Exception as e:
@@ -141,7 +162,7 @@ def ensure_mongo_connection():
         db.command('ping')
         return True
     except Exception as e:
-        logger.warning(f"MongoDB connection lost, reconnecting... Error: {e}")
+        logger.warning(f"MongoDB connection lost, reconnecting... Error: {type(e).__name__}")
         return connect_to_mongodb()
 
 
