@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import openpyxl
 from flask import Flask, render_template, request, send_file, redirect, url_for, jsonify
@@ -12,51 +13,68 @@ from dotenv import load_dotenv
 import io
 from bson.binary import Binary
 from bson.objectid import ObjectId
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# Get the base directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 app = Flask(__name__, 
-    static_folder='static',
-    template_folder='templates'
+    static_folder=os.path.join(BASE_DIR, 'static'),
+    static_url_path='/static',
+    template_folder=os.path.join(BASE_DIR, 'templates')
 )
 
-# Add an upload size limit (adjust as needed). Prevent huge files that cause OOM.
+# Add an upload size limit
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB
-
-activate = False
 
 # Path for uploaded files - use /tmp for Vercel
 if os.environ.get('VERCEL'):
     UPLOAD_FOLDER = '/tmp/uploads'
 else:
-    UPLOAD_FOLDER = 'uploads'
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# MongoDB connection with connection pool settings
+logger.info(f"Base directory: {BASE_DIR}")
+logger.info(f"Template folder: {app.template_folder}")
+logger.info(f"Static folder: {app.static_folder}")
+logger.info(f"Upload folder: {UPLOAD_FOLDER}")
+
+# MongoDB connection with better error handling
 MONGODB_URI = os.getenv('MONGODB_URI')
 if not MONGODB_URI:
+    logger.error("MONGODB_URI environment variable not set")
     raise ValueError("MONGODB_URI environment variable not set")
+
+client = None
+db = None
+files_collection = None
 
 try:
     client = MongoClient(
         MONGODB_URI,
         serverSelectionTimeoutMS=5000,
         connectTimeoutMS=10000,
-        socketTimeoutMS=None,
-        maxPoolSize=1,
-        minPoolSize=0
+        retryWrites=False,
+        maxPoolSize=1
     )
     # Test connection
     client.admin.command('ping')
-    print("MongoDB connection successful")
+    logger.info("MongoDB connection successful")
+    db = client['feedback_processing']
+    files_collection = db['processed_files']
 except Exception as e:
-    print(f"MongoDB connection error: {e}")
-    raise
-
-db = client['feedback_processing']
-files_collection = db['processed_files']
+    logger.error(f"MongoDB connection error: {e}")
+    # Continue anyway - allow app to start
+    db = None
+    files_collection = None
 
 
 def read_csv_headers(file_path):
@@ -327,10 +345,10 @@ def save_file_to_mongodb(file_path, original_filename):
         }
         
         result = files_collection.insert_one(file_record)
-        print(f"File saved to MongoDB with ID: {result.inserted_id}, filename: {filename}")
+        logger.info(f"File saved to MongoDB with ID: {result.inserted_id}, filename: {filename}")
         return str(result.inserted_id)
     except Exception as e:
-        print(f"Error saving file to MongoDB: {e}")
+        logger.error(f"Error saving file to MongoDB: {e}")
         import traceback
         traceback.print_exc()
         raise
@@ -341,8 +359,17 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/files')
+def files_page():
+    """Render files management page"""
+    return render_template('files.html')
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    if not files_collection:
+        return jsonify({'success': False, 'error': 'Database not available'}), 503
+
     # Reject uploads larger than MAX_CONTENT_LENGTH early
     if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
         return jsonify({'success': False, 'error': 'File too large'}), 413
@@ -410,23 +437,23 @@ def upload_file():
                 excel_filename = os.path.basename(excel_path)
                 file_id = save_file_to_mongodb(excel_path, excel_filename)
                 
-                print(f"File saved to MongoDB with ID: {file_id}")
+                logger.info(f"File saved to MongoDB with ID: {file_id}")
                 
                 # Delete uploaded CSV and processed Excel file after saving to MongoDB
                 try:
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        print(f"Deleted uploaded file: {file_path}")
+                        logger.info(f"Deleted uploaded file: {file_path}")
                     if os.path.exists(excel_path):
                         os.remove(excel_path)
-                        print(f"Deleted Excel file: {excel_path}")
+                        logger.info(f"Deleted Excel file: {excel_path}")
                 except Exception as delete_error:
-                    print(f"Could not delete file: {delete_error}")
+                    logger.warning(f"Could not delete file: {delete_error}")
                 
                 # Return success response
                 return jsonify({'success': True, 'file_id': file_id}), 200
             except Exception as e:
-                print(f"Error: {e}")
+                logger.error(f"Error: {e}")
                 # Clean up both files on error
                 if os.path.exists(file_path):
                     os.remove(file_path)
@@ -434,7 +461,7 @@ def upload_file():
                     os.remove(excel_path)
                 return jsonify({'success': False, 'error': str(e)}), 500
         except Exception as e:
-            print(f"Upload error: {e}")
+            logger.error(f"Upload error: {e}")
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -464,21 +491,15 @@ def download_file(file_id):
             download_name=filename
         )
     except Exception as e:
-        print(f"Error downloading file: {e}")
+        logger.error(f"Error downloading file: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/files')
-def files_page():
-    """Render files management page"""
-    return render_template('files.html')
 
 
 @app.route('/api/files', methods=['GET'])
 def get_files():
     """Get all processed files from MongoDB"""
     try:
-        print("Fetching files from MongoDB...")
+        logger.info("Fetching files from MongoDB...")
         
         files = list(files_collection.find({}, {
             'filename': 1,
@@ -487,7 +508,7 @@ def get_files():
             '_id': 1
         }).sort('upload_date', -1))
         
-        print(f"Found {len(files)} files in MongoDB")
+        logger.info(f"Found {len(files)} files in MongoDB")
         
         # Convert ObjectId to string for JSON serialization
         result_files = []
@@ -501,13 +522,13 @@ def get_files():
                 }
                 result_files.append(file_dict)
             except Exception as e:
-                print(f"Error processing file record: {e}")
+                logger.warning(f"Error processing file record: {e}")
                 continue
         
-        print(f"Successfully converted {len(result_files)} files to JSON format")
+        logger.info(f"Successfully converted {len(result_files)} files to JSON format")
         return jsonify({'success': True, 'files': result_files}), 200
     except Exception as e:
-        print(f"Error fetching files: {str(e)}")
+        logger.error(f"Error fetching files: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({
@@ -528,7 +549,7 @@ def delete_file_api(file_id):
         else:
             return jsonify({'success': False, 'message': 'File not found'}), 404
     except Exception as e:
-        print(f"Error deleting file: {e}")
+        logger.error(f"Error deleting file: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -544,7 +565,7 @@ def health_check():
             'timestamp': pd.Timestamp.now().isoformat()
         }), 200
     except Exception as e:
-        print(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {e}")
         return jsonify({
             'status': 'unhealthy',
             'mongodb': 'disconnected',
@@ -555,11 +576,13 @@ def health_check():
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):
+    logger.warning(f"404 error: {error}")
     return jsonify({'success': False, 'error': 'Not found'}), 404
 
 
 @app.errorhandler(500)
 def internal_error(error):
+    logger.error(f"500 error: {error}")
     return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 

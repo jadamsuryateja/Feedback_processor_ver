@@ -1,0 +1,11 @@
+uploads/
+__pycache__/
+*.pyc
+.env.local
+.venv/
+*.egg-info/
+dist/
+build/
+.git
+.gitignore
+README.md
