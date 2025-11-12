@@ -55,6 +55,8 @@ if not MONGODB_URI:
     logger.error("MONGODB_URI environment variable not set")
     raise ValueError("MONGODB_URI environment variable not set")
 
+logger.info(f"Attempting to connect to MongoDB...")
+
 client = None
 db = None
 files_collection = None
@@ -62,21 +64,30 @@ files_collection = None
 try:
     client = MongoClient(
         MONGODB_URI,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=15000,
+        socketTimeoutMS=15000,
         retryWrites=False,
-        maxPoolSize=1
+        maxPoolSize=5,
+        minPoolSize=1
     )
-    # Test connection
+    
+    # Explicitly test the connection
+    logger.info("Testing MongoDB connection with ping...")
     client.admin.command('ping')
-    logger.info("MongoDB connection successful")
+    logger.info("MongoDB ping successful - connection established!")
+    
     db = client['feedback_processing']
     files_collection = db['processed_files']
+    
+    # Test collection access
+    logger.info(f"Testing collection access...")
+    files_collection.count_documents({})
+    logger.info("MongoDB collection access successful!")
+    
 except Exception as e:
-    logger.error(f"MongoDB connection error: {e}")
-    # Continue anyway - allow app to start
-    db = None
-    files_collection = None
+    logger.error(f"MongoDB connection error: {e}", exc_info=True)
+    # Don't raise - allow app to start but operations will fail gracefully
 
 
 def read_csv_headers(file_path):
@@ -163,7 +174,6 @@ def apply_borders(sheet, start_row, end_row, start_col, end_col):
 
 def create_summary_sheet(workbook, df, file_path, branch_name):
     """Create summary sheet for each branch"""
-    # Ensure we work on a copy to avoid SettingWithCopyWarning and accidental views
     df = df.copy()
 
     if f"{branch_name} - Summary" not in workbook.sheetnames:
@@ -171,7 +181,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
     else:
         summary_sheet = workbook[f"{branch_name} - Summary"]
 
-    # Extract filename information
     file_name = os.path.basename(file_path)
     file_name_without_extension = os.path.splitext(file_name)[0]
     parts = file_name_without_extension.split('_')
@@ -332,11 +341,13 @@ def create_comments_sheet(workbook, df):
 
 def save_file_to_mongodb(file_path, original_filename):
     """Save processed Excel file to MongoDB Atlas"""
+    if not files_collection:
+        raise Exception("MongoDB collection not initialized")
+    
     try:
         with open(file_path, 'rb') as f:
             file_data = f.read()
         
-        # Ensure filename is a string
         filename = str(original_filename) if original_filename else os.path.basename(file_path)
         
         file_record = {
@@ -350,9 +361,7 @@ def save_file_to_mongodb(file_path, original_filename):
         logger.info(f"File saved to MongoDB with ID: {result.inserted_id}, filename: {filename}")
         return str(result.inserted_id)
     except Exception as e:
-        logger.error(f"Error saving file to MongoDB: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error saving file to MongoDB: {e}", exc_info=True)
         raise
 
 
@@ -366,13 +375,16 @@ def index():
 @app.route('/test')
 def test():
     """Test route to verify app is running"""
+    mongo_status = "connected" if files_collection else "disconnected"
     return jsonify({
         'status': 'ok',
         'message': 'Flask app is running',
         'templates_dir': app.template_folder,
         'templates_exist': os.path.exists(app.template_folder),
         'static_dir': app.static_folder,
-        'static_exist': os.path.exists(app.static_folder)
+        'static_exist': os.path.exists(app.static_folder),
+        'mongodb_status': mongo_status,
+        'mongodb_uri_set': bool(MONGODB_URI)
     }), 200
 
 
@@ -385,7 +397,8 @@ def files_page():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if not files_collection:
-        return jsonify({'success': False, 'error': 'Database not available'}), 503
+        logger.error("MongoDB collection not available for upload")
+        return jsonify({'success': False, 'error': 'Database connection failed. Please check MongoDB URI in environment variables.'}), 503
 
     # Reject uploads larger than MAX_CONTENT_LENGTH early
     if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
@@ -404,6 +417,7 @@ def upload_file():
         
         try:
             file.save(file_path)
+            logger.info(f"File saved to {file_path}")
 
             # Read CSV and strip header spaces
             rows = read_csv_headers(file_path)
@@ -429,6 +443,7 @@ def upload_file():
             excel_path = f"{file_base}_processed.xlsx"
 
             write_to_excel(rows, excel_path)
+            logger.info(f"Excel file created at {excel_path}")
 
             # Load and process Excel file
             workbook = load_workbook(excel_path)
@@ -448,6 +463,7 @@ def upload_file():
                 workbook._sheets = [sheets[0]] + sorted_middle_sheets + [sheets[-1]]
 
             workbook.save(excel_path)
+            logger.info(f"Excel file processed and saved")
 
             try:
                 # Save file to MongoDB instead of auto-downloading
@@ -470,15 +486,14 @@ def upload_file():
                 # Return success response
                 return jsonify({'success': True, 'file_id': file_id}), 200
             except Exception as e:
-                logger.error(f"Error: {e}")
-                # Clean up both files on error
+                logger.error(f"Error saving to MongoDB: {e}", exc_info=True)
                 if os.path.exists(file_path):
                     os.remove(file_path)
                 if os.path.exists(excel_path):
                     os.remove(excel_path)
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': f'Failed to save file: {str(e)}'}), 500
         except Exception as e:
-            logger.error(f"Upload error: {e}")
+            logger.error(f"Upload error: {e}", exc_info=True)
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -518,6 +533,14 @@ def get_files():
     try:
         logger.info("Fetching files from MongoDB...")
         
+        if not files_collection:
+            logger.error("MongoDB collection not available")
+            return jsonify({
+                'success': False, 
+                'files': [], 
+                'error': 'Database not connected'
+            }), 503
+        
         files = list(files_collection.find({}, {
             'filename': 1,
             'upload_date': 1,
@@ -527,7 +550,6 @@ def get_files():
         
         logger.info(f"Found {len(files)} files in MongoDB")
         
-        # Convert ObjectId to string for JSON serialization
         result_files = []
         for file in files:
             try:
@@ -545,9 +567,7 @@ def get_files():
         logger.info(f"Successfully converted {len(result_files)} files to JSON format")
         return jsonify({'success': True, 'files': result_files}), 200
     except Exception as e:
-        logger.error(f"Error fetching files: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error fetching files: {str(e)}", exc_info=True)
         return jsonify({
             'success': False, 
             'files': [], 
@@ -574,7 +594,13 @@ def delete_file_api(file_id):
 def health_check():
     """Health check endpoint"""
     try:
-        # Test MongoDB connection
+        if not db:
+            return jsonify({
+                'status': 'unhealthy',
+                'mongodb': 'not connected',
+                'error': 'Database client not initialized'
+            }), 503
+        
         db.command('ping')
         return jsonify({
             'status': 'healthy',
@@ -587,10 +613,9 @@ def health_check():
             'status': 'unhealthy',
             'mongodb': 'disconnected',
             'error': str(e)
-        }), 500
+        }), 503
 
 
-# Error handlers
 @app.errorhandler(404)
 def not_found(error):
     logger.warning(f"404 error: {error}")
