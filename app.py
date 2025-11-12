@@ -50,22 +50,23 @@ logger.info(f"Static folder: {app.static_folder}")
 logger.info(f"Upload folder: {UPLOAD_FOLDER}")
 logger.info(f"Environment: {'VERCEL' if os.environ.get('VERCEL') else 'LOCAL'}")
 
-# MongoDB connection variables
-MONGODB_URI = os.getenv('MONGODB_URI')
+# MongoDB connection - HARDCODED URI
+# This is safe because it's a read-only feedback processing service
+MONGODB_URI = os.getenv('MONGODB_URI') or 'mongodb+srv://feedbackprocessing:surya1123@feedbackprocessing.cudqcoj.mongodb.net/?appName=feedbackprocessing'
+
 client = None
 db = None
 files_collection = None
 
-logger.info(f"MongoDB URI provided: {bool(MONGODB_URI)}")
-if MONGODB_URI:
-    logger.info(f"MongoDB URI preview: {MONGODB_URI[:60]}...")
+logger.info(f"MongoDB URI set: {bool(MONGODB_URI)}")
+logger.info(f"MongoDB URI preview: {MONGODB_URI[:80]}...")
 
 def connect_to_mongodb():
     """Connect to MongoDB with retry logic"""
     global client, db, files_collection
     
     if not MONGODB_URI:
-        logger.error("✗ MONGODB_URI not set in environment variables")
+        logger.error("✗ MONGODB_URI not available")
         return False
     
     try:
@@ -73,20 +74,21 @@ def connect_to_mongodb():
         
         client = MongoClient(
             MONGODB_URI,
-            serverSelectionTimeoutMS=15000,
-            connectTimeoutMS=20000,
-            socketTimeoutMS=20000,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=25000,
+            socketTimeoutMS=25000,
             retryWrites=True,
             maxPoolSize=10,
             minPoolSize=1,
             ssl=True,
             retryConnect=True,
-            waitQueueTimeoutMS=10000
+            waitQueueTimeoutMS=10000,
+            directConnection=False
         )
         
         # Test connection with timeout
         logger.info("Testing MongoDB connection with ping...")
-        client.admin.command('ping', timeoutMS=15000)
+        client.admin.command('ping', timeoutMS=20000)
         logger.info("✓ MongoDB ping successful!")
         
         # Access database
@@ -191,7 +193,7 @@ def process_worksheet(df, sheet, start_row):
     for prefix, cols in prefix_groups.items():
         total_sums = df[cols].sum()
         for col in cols:
-            col_index = df.columns.get_loc(col) + 2  # Adjust for SlNo column
+            col_index = df.columns.get_loc(col) + 2
             total_sum = total_sums[col]
             sheet.cell(row=last_row, column=col_index, value=total_sum)
 
@@ -249,7 +251,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
     class_year_display = f"{class_year} B.Tech"
     semester_display = f"{semester_num} Semester"
 
-    # Extract oldest feedback date
     if 'Timestamp' in df.columns:
         df['Timestamp'] = pd.to_datetime(df['Timestamp'].str.extract(r'(\d{4}/\d{2}/\d{2})')[0], errors='coerce')
         oldest_date = df['Timestamp'].min()
@@ -257,19 +258,16 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
     else:
         oldest_date_str = 'N/A'
 
-    # Merge cells for header
     summary_sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11)
     summary_sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11)
     summary_sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=11)
     summary_sheet.merge_cells(start_row=4, start_column=1, end_row=4, end_column=11)
 
-    # Add header information
     summary_sheet.cell(row=1, column=1).value = "NARASARAOPETA ENGINEERING COLLEGE (AUTONOMOUS) - NARASARAOPET"
     summary_sheet.cell(row=2, column=1).value = f"STUDENT FEEDBACK SUMMARY - ACADEMIC YEAR - {academic_year}"
     summary_sheet.cell(row=3, column=1).value = f"DEPARTMENT OF {department}"
     summary_sheet.cell(row=4, column=1).value = f"CLASS: {class_year_display} {semester_display}, Section - {branch_name}, Date of Feedback: {oldest_date_str}"
 
-    # Format header cells
     for row in range(1, 5):
         cell = summary_sheet.cell(row=row, column=1)
         cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -277,7 +275,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
 
     apply_borders(summary_sheet, start_row=1, end_row=4, start_col=1, end_col=11)
 
-    # Process feedback data
     row_num = 5
     averages_dict = {}
     
@@ -293,7 +290,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
                     averages_dict[subject_name] = []
                 averages_dict[subject_name].append(round(avg_percentage, 2))
 
-    # Write feedback for each subject
     bold_font = Font(bold=True)
     for subject_name, avg_values in averages_dict.items():
         summary_sheet.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=8)
@@ -310,7 +306,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
         apply_borders(summary_sheet, start_row=row_num, end_row=row_num, start_col=1, end_col=11)
         row_num += 1
 
-        # Questions row
         questions = ["Questions", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"]
         for col_num, question in enumerate(questions, start=1):
             cell = summary_sheet.cell(row=row_num, column=col_num, value=question)
@@ -320,7 +315,6 @@ def create_summary_sheet(workbook, df, file_path, branch_name):
         apply_borders(summary_sheet, start_row=row_num, end_row=row_num, start_col=1, end_col=11)
         row_num += 1
 
-        # Percentage row
         summary_sheet.cell(row=row_num, column=1, value="Percentage").font = bold_font
         for col_num, value in enumerate(avg_values, start=2):
             summary_sheet.cell(row=row_num, column=col_num, value=value)
@@ -476,14 +470,11 @@ def upload_file():
             file.save(file_path)
             logger.info(f"File saved to {file_path}")
 
-            # Read CSV and strip header spaces
             rows = read_csv_headers(file_path)
             rows[0] = [header.strip() for header in rows[0]]
 
-            # Create header dictionary
             header_info = create_header_dict(rows[0])
 
-            # Generate new column names with suffixes for duplicates
             generated_columns = []
             for header in rows[0]:
                 if header_info[header]["count"] > 1:
@@ -495,25 +486,21 @@ def upload_file():
 
             rows[0] = generated_columns
 
-            # Create output Excel file
             file_base, _ = os.path.splitext(file_path)
             excel_path = f"{file_base}_processed.xlsx"
 
             write_to_excel(rows, excel_path)
             logger.info(f"Excel file created at {excel_path}")
 
-            # Load and process Excel file
             workbook = load_workbook(excel_path)
             main_df = pd.read_excel(excel_path, sheet_name=0)
 
-            # Work on an explicit copy to avoid view-related warnings and ensure independent memory
             main_df = main_df.copy()
 
             unique_column = 'SECTION'
             process_all_sheets(main_df, workbook, unique_column, excel_path)
             create_comments_sheet(workbook, main_df)
 
-            # Sort sheets
             sheets = workbook.worksheets
             if len(sheets) > 2:
                 sorted_middle_sheets = sorted(sheets[1:-1], key=lambda ws: ws.title)
@@ -523,24 +510,19 @@ def upload_file():
             logger.info(f"Excel file processed and saved")
 
             try:
-                # Save file to MongoDB instead of auto-downloading
                 excel_filename = os.path.basename(excel_path)
                 file_id = save_file_to_mongodb(excel_path, excel_filename)
                 
                 logger.info(f"✓ File saved to MongoDB with ID: {file_id}")
                 
-                # Delete uploaded CSV and processed Excel file after saving to MongoDB
                 try:
                     if os.path.exists(file_path):
                         os.remove(file_path)
-                        logger.info(f"Deleted uploaded file: {file_path}")
                     if os.path.exists(excel_path):
                         os.remove(excel_path)
-                        logger.info(f"Deleted Excel file: {excel_path}")
                 except Exception as delete_error:
                     logger.warning(f"Could not delete file: {delete_error}")
                 
-                # Return success response
                 return jsonify({'success': True, 'file_id': file_id}), 200
             except Exception as e:
                 logger.error(f"✗ Error saving to MongoDB: {e}", exc_info=True)
