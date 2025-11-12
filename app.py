@@ -1,5 +1,6 @@
 import os
 import csv
+import tempfile
 from collections import defaultdict
 import openpyxl
 from openpyxl.styles import Border, Side, Alignment, Font
@@ -15,9 +16,9 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB
 
 activate = False
-# Path for uploaded files
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Use /tmp for Vercel serverless environment
+UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
@@ -281,7 +282,6 @@ def index():
 def upload_file():
     # Reject uploads larger than MAX_CONTENT_LENGTH early
     if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
-        # You can render a message or flash; keep simple and redirect
         return redirect(url_for('index'))
 
     if 'file' not in request.files:
@@ -292,75 +292,75 @@ def upload_file():
         return redirect(request.url)
 
     if file:
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-
-        # Read CSV and strip header spaces
-        rows = read_csv_headers(file_path)
-        rows[0] = [header.strip() for header in rows[0]]
-
-        # Create header dictionary
-        header_info = create_header_dict(rows[0])
-
-        # Generate new column names with suffixes for duplicates
-        generated_columns = []
-        for header in rows[0]:
-            if header_info[header]["count"] > 1:
-                header_info[header]["used"] += 1
-                new_column_name = f"{header}.{header_info[header]['used']}"
-                generated_columns.append(new_column_name)
-            else:
-                generated_columns.append(header)
-
-        rows[0] = generated_columns
-
-        # Create output Excel file
-        file_base, _ = os.path.splitext(file_path)
-        excel_path = f"{file_base}_processed.xlsx"
-
-        write_to_excel(rows, excel_path)
-
-        # Load and process Excel file
-        workbook = load_workbook(excel_path)
-        main_df = pd.read_excel(excel_path, sheet_name=0)
-
-        # Work on an explicit copy to avoid view-related warnings and ensure independent memory
-        main_df = main_df.copy()
-
-        unique_column = 'SECTION'
-        process_all_sheets(main_df, workbook, unique_column, excel_path)
-        create_comments_sheet(workbook, main_df)
-
-        # Sort sheets
-        sheets = workbook.worksheets
-        if len(sheets) > 2:
-            sorted_middle_sheets = sorted(sheets[1:-1], key=lambda ws: ws.title)
-            workbook._sheets = [sheets[0]] + sorted_middle_sheets + [sheets[-1]]
-
-        workbook.save(excel_path)
-
         try:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            # Read CSV and strip header spaces
+            rows = read_csv_headers(file_path)
+            rows[0] = [header.strip() for header in rows[0]]
+
+            # Create header dictionary
+            header_info = create_header_dict(rows[0])
+
+            # Generate new column names with suffixes for duplicates
+            generated_columns = []
+            for header in rows[0]:
+                if header_info[header]["count"] > 1:
+                    header_info[header]["used"] += 1
+                    new_column_name = f"{header}.{header_info[header]['used']}"
+                    generated_columns.append(new_column_name)
+                else:
+                    generated_columns.append(header)
+
+            rows[0] = generated_columns
+
+            # Create output Excel file
+            file_base, _ = os.path.splitext(file_path)
+            excel_path = f"{file_base}_processed.xlsx"
+
+            write_to_excel(rows, excel_path)
+
+            # Load and process Excel file
+            workbook = load_workbook(excel_path)
+            main_df = pd.read_excel(excel_path, sheet_name=0)
+
+            # Work on an explicit copy
+            main_df = main_df.copy()
+
+            unique_column = 'SECTION'
+            process_all_sheets(main_df, workbook, unique_column, excel_path)
+            create_comments_sheet(workbook, main_df)
+
+            # Sort sheets
+            sheets = workbook.worksheets
+            if len(sheets) > 2:
+                sorted_middle_sheets = sorted(sheets[1:-1], key=lambda ws: ws.title)
+                workbook._sheets = [sheets[0]] + sorted_middle_sheets + [sheets[-1]]
+
+            workbook.save(excel_path)
+
             # Send file for download
             response = send_file(excel_path, as_attachment=True)
             
-            # Delete uploaded CSV file after processing
+            return response
+            
+        except Exception as e:
+            print(f"Error processing file: {e}")
+            return redirect(url_for('index'))
+        finally:
+            # Clean up temporary files
             try:
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    print(f"Deleted uploaded file: {file_path}")
-            except Exception as delete_error:
-                print(f"Could not delete file {file_path}: {delete_error}")
-            
-            return response
-        except Exception as e:
-            print(f"Error: {e}")
-            # Clean up both files on error
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            if os.path.exists(excel_path):
-                os.remove(excel_path)
-            return redirect(url_for('index'))
+            except:
+                pass
+            try:
+                if os.path.exists(excel_path):
+                    os.remove(excel_path)
+            except:
+                pass
     
     return redirect(url_for('index'))
 
