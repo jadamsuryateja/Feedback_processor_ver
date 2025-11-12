@@ -2,10 +2,6 @@ import os
 import csv
 import openpyxl
 from flask import Flask, render_template, request, send_file, redirect, url_for
-from werkzeug.utils import secure_filename
-from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Side, Font
-from collections import defaultdict
 import pandas as pd
 
 app = Flask(__name__)
