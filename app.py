@@ -15,20 +15,46 @@ from bson.objectid import ObjectId
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, 
+    static_folder='static',
+    template_folder='templates'
+)
 
 # Add an upload size limit (adjust as needed). Prevent huge files that cause OOM.
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB
 
 activate = False
+
 # Path for uploaded files - use /tmp for Vercel
-UPLOAD_FOLDER = '/tmp/uploads' if os.environ.get('VERCEL') else 'uploads'
+if os.environ.get('VERCEL'):
+    UPLOAD_FOLDER = '/tmp/uploads'
+else:
+    UPLOAD_FOLDER = 'uploads'
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# MongoDB connection
+# MongoDB connection with connection pool settings
 MONGODB_URI = os.getenv('MONGODB_URI')
-client = MongoClient(MONGODB_URI)
+if not MONGODB_URI:
+    raise ValueError("MONGODB_URI environment variable not set")
+
+try:
+    client = MongoClient(
+        MONGODB_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=None,
+        maxPoolSize=1,
+        minPoolSize=0
+    )
+    # Test connection
+    client.admin.command('ping')
+    print("MongoDB connection successful")
+except Exception as e:
+    print(f"MongoDB connection error: {e}")
+    raise
+
 db = client['feedback_processing']
 files_collection = db['processed_files']
 
@@ -319,94 +345,104 @@ def index():
 def upload_file():
     # Reject uploads larger than MAX_CONTENT_LENGTH early
     if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
-        return redirect(url_for('index'))
+        return jsonify({'success': False, 'error': 'File too large'}), 413
 
     if 'file' not in request.files:
-        return redirect(request.url)
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return redirect(request.url)
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
 
     if file:
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-
-        # Read CSV and strip header spaces
-        rows = read_csv_headers(file_path)
-        rows[0] = [header.strip() for header in rows[0]]
-
-        # Create header dictionary
-        header_info = create_header_dict(rows[0])
-
-        # Generate new column names with suffixes for duplicates
-        generated_columns = []
-        for header in rows[0]:
-            if header_info[header]["count"] > 1:
-                header_info[header]["used"] += 1
-                new_column_name = f"{header}.{header_info[header]['used']}"
-                generated_columns.append(new_column_name)
-            else:
-                generated_columns.append(header)
-
-        rows[0] = generated_columns
-
-        # Create output Excel file
-        file_base, _ = os.path.splitext(file_path)
-        excel_path = f"{file_base}_processed.xlsx"
-
-        write_to_excel(rows, excel_path)
-
-        # Load and process Excel file
-        workbook = load_workbook(excel_path)
-        main_df = pd.read_excel(excel_path, sheet_name=0)
-
-        # Work on an explicit copy to avoid view-related warnings and ensure independent memory
-        main_df = main_df.copy()
-
-        unique_column = 'SECTION'
-        process_all_sheets(main_df, workbook, unique_column, excel_path)
-        create_comments_sheet(workbook, main_df)
-
-        # Sort sheets
-        sheets = workbook.worksheets
-        if len(sheets) > 2:
-            sorted_middle_sheets = sorted(sheets[1:-1], key=lambda ws: ws.title)
-            workbook._sheets = [sheets[0]] + sorted_middle_sheets + [sheets[-1]]
-
-        workbook.save(excel_path)
-
+        
         try:
-            # Save file to MongoDB instead of auto-downloading
-            excel_filename = os.path.basename(excel_path)
-            file_id = save_file_to_mongodb(excel_path, excel_filename)
-            
-            print(f"File saved to MongoDB with ID: {file_id}")
-            
-            # Delete uploaded CSV and processed Excel file after saving to MongoDB
+            file.save(file_path)
+
+            # Read CSV and strip header spaces
+            rows = read_csv_headers(file_path)
+            rows[0] = [header.strip() for header in rows[0]]
+
+            # Create header dictionary
+            header_info = create_header_dict(rows[0])
+
+            # Generate new column names with suffixes for duplicates
+            generated_columns = []
+            for header in rows[0]:
+                if header_info[header]["count"] > 1:
+                    header_info[header]["used"] += 1
+                    new_column_name = f"{header}.{header_info[header]['used']}"
+                    generated_columns.append(new_column_name)
+                else:
+                    generated_columns.append(header)
+
+            rows[0] = generated_columns
+
+            # Create output Excel file
+            file_base, _ = os.path.splitext(file_path)
+            excel_path = f"{file_base}_processed.xlsx"
+
+            write_to_excel(rows, excel_path)
+
+            # Load and process Excel file
+            workbook = load_workbook(excel_path)
+            main_df = pd.read_excel(excel_path, sheet_name=0)
+
+            # Work on an explicit copy to avoid view-related warnings and ensure independent memory
+            main_df = main_df.copy()
+
+            unique_column = 'SECTION'
+            process_all_sheets(main_df, workbook, unique_column, excel_path)
+            create_comments_sheet(workbook, main_df)
+
+            # Sort sheets
+            sheets = workbook.worksheets
+            if len(sheets) > 2:
+                sorted_middle_sheets = sorted(sheets[1:-1], key=lambda ws: ws.title)
+                workbook._sheets = [sheets[0]] + sorted_middle_sheets + [sheets[-1]]
+
+            workbook.save(excel_path)
+
             try:
+                # Save file to MongoDB instead of auto-downloading
+                excel_filename = os.path.basename(excel_path)
+                file_id = save_file_to_mongodb(excel_path, excel_filename)
+                
+                print(f"File saved to MongoDB with ID: {file_id}")
+                
+                # Delete uploaded CSV and processed Excel file after saving to MongoDB
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print(f"Deleted uploaded file: {file_path}")
+                    if os.path.exists(excel_path):
+                        os.remove(excel_path)
+                        print(f"Deleted Excel file: {excel_path}")
+                except Exception as delete_error:
+                    print(f"Could not delete file: {delete_error}")
+                
+                # Return success response
+                return jsonify({'success': True, 'file_id': file_id}), 200
+            except Exception as e:
+                print(f"Error: {e}")
+                # Clean up both files on error
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    print(f"Deleted uploaded file: {file_path}")
                 if os.path.exists(excel_path):
                     os.remove(excel_path)
-                    print(f"Deleted Excel file: {excel_path}")
-            except Exception as delete_error:
-                print(f"Could not delete file: {delete_error}")
-            
-            # Render success page with file ID
-            return render_template('index.html', file_id=file_id, success=True)
+                return jsonify({'success': False, 'error': str(e)}), 500
         except Exception as e:
-            print(f"Error: {e}")
-            # Clean up both files on error
+            print(f"Upload error: {e}")
             if os.path.exists(file_path):
-                os.remove(file_path)
-            if os.path.exists(excel_path):
-                os.remove(excel_path)
-            return redirect(url_for('index'))
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+            return jsonify({'success': False, 'error': str(e)}), 500
     
-    return redirect(url_for('index'))
+    return jsonify({'success': False, 'error': 'Unknown error'}), 500
 
 
 @app.route('/download/<file_id>', methods=['GET'])
@@ -416,7 +452,7 @@ def download_file(file_id):
         file_record = files_collection.find_one({'_id': ObjectId(file_id)})
         
         if not file_record:
-            return redirect(url_for('index'))
+            return jsonify({'success': False, 'error': 'File not found'}), 404
         
         file_data = file_record['file_data']
         filename = file_record['filename']
@@ -429,7 +465,7 @@ def download_file(file_id):
         )
     except Exception as e:
         print(f"Error downloading file: {e}")
-        return redirect(url_for('index'))
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/files')
@@ -514,6 +550,17 @@ def health_check():
             'mongodb': 'disconnected',
             'error': str(e)
         }), 500
+
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'success': False, 'error': 'Not found'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 
 if __name__ == '__main__':
