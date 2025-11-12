@@ -46,6 +46,8 @@ logger.info(f"Base directory: {BASE_DIR}")
 logger.info(f"Template folder: {app.template_folder}")
 logger.info(f"Static folder: {app.static_folder}")
 logger.info(f"Upload folder: {UPLOAD_FOLDER}")
+logger.info(f"Templates exist: {os.path.exists(app.template_folder)}")
+logger.info(f"Index.html exists: {os.path.exists(os.path.join(app.template_folder, 'index.html'))}")
 
 # MongoDB connection with better error handling
 MONGODB_URI = os.getenv('MONGODB_URI')
@@ -354,9 +356,24 @@ def save_file_to_mongodb(file_path, original_filename):
         raise
 
 
+# Routes
 @app.route('/')
 def index():
+    logger.info("Rendering index.html")
     return render_template('index.html')
+
+
+@app.route('/test')
+def test():
+    """Test route to verify app is running"""
+    return jsonify({
+        'status': 'ok',
+        'message': 'Flask app is running',
+        'templates_dir': app.template_folder,
+        'templates_exist': os.path.exists(app.template_folder),
+        'static_dir': app.static_folder,
+        'static_exist': os.path.exists(app.static_folder)
+    }), 200
 
 
 @app.route('/files')
