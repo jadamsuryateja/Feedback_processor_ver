@@ -17,6 +17,7 @@
   ],
   "env": {
     "FLASK_ENV": "production",
-    "VERCEL": "1"
+    "VERCEL": "1",
+    "MONGODB_URI": "mongodb+srv://feedbackprocessing:surya1123@feedbackprocessing.cudqcoj.mongodb.net/?appName=feedbackprocessing"
   }
 }

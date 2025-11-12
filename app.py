@@ -46,16 +46,17 @@ logger.info(f"Base directory: {BASE_DIR}")
 logger.info(f"Template folder: {app.template_folder}")
 logger.info(f"Static folder: {app.static_folder}")
 logger.info(f"Upload folder: {UPLOAD_FOLDER}")
-logger.info(f"Templates exist: {os.path.exists(app.template_folder)}")
-logger.info(f"Index.html exists: {os.path.exists(os.path.join(app.template_folder, 'index.html'))}")
+logger.info(f"Environment: {'VERCEL' if os.environ.get('VERCEL') else 'LOCAL'}")
 
 # MongoDB connection with better error handling
 MONGODB_URI = os.getenv('MONGODB_URI')
+
 if not MONGODB_URI:
     logger.error("MONGODB_URI environment variable not set")
-    raise ValueError("MONGODB_URI environment variable not set")
+    logger.error("Available env vars: " + str(list(os.environ.keys())))
+    raise ValueError("MONGODB_URI environment variable is required")
 
-logger.info(f"Attempting to connect to MongoDB...")
+logger.info(f"Attempting to connect to MongoDB with URI: {MONGODB_URI[:50]}...")
 
 client = None
 db = None
@@ -69,25 +70,29 @@ try:
         socketTimeoutMS=15000,
         retryWrites=False,
         maxPoolSize=5,
-        minPoolSize=1
+        minPoolSize=1,
+        ssl=True,
+        retryConnect=True
     )
     
     # Explicitly test the connection
     logger.info("Testing MongoDB connection with ping...")
     client.admin.command('ping')
-    logger.info("MongoDB ping successful - connection established!")
+    logger.info("✓ MongoDB ping successful - connection established!")
     
     db = client['feedback_processing']
     files_collection = db['processed_files']
     
     # Test collection access
-    logger.info(f"Testing collection access...")
-    files_collection.count_documents({})
-    logger.info("MongoDB collection access successful!")
+    logger.info("Testing collection access...")
+    count = files_collection.count_documents({})
+    logger.info(f"✓ MongoDB collection access successful! Found {count} existing files.")
     
 except Exception as e:
-    logger.error(f"MongoDB connection error: {e}", exc_info=True)
-    # Don't raise - allow app to start but operations will fail gracefully
+    logger.error(f"✗ MongoDB connection error: {e}", exc_info=True)
+    client = None
+    db = None
+    files_collection = None
 
 
 def read_csv_headers(file_path):
@@ -342,7 +347,7 @@ def create_comments_sheet(workbook, df):
 def save_file_to_mongodb(file_path, original_filename):
     """Save processed Excel file to MongoDB Atlas"""
     if not files_collection:
-        raise Exception("MongoDB collection not initialized")
+        raise Exception("MongoDB collection not initialized - database connection failed")
     
     try:
         with open(file_path, 'rb') as f:
@@ -358,10 +363,10 @@ def save_file_to_mongodb(file_path, original_filename):
         }
         
         result = files_collection.insert_one(file_record)
-        logger.info(f"File saved to MongoDB with ID: {result.inserted_id}, filename: {filename}")
+        logger.info(f"✓ File saved to MongoDB with ID: {result.inserted_id}, filename: {filename}")
         return str(result.inserted_id)
     except Exception as e:
-        logger.error(f"Error saving file to MongoDB: {e}", exc_info=True)
+        logger.error(f"✗ Error saving file to MongoDB: {e}", exc_info=True)
         raise
 
 
@@ -374,17 +379,18 @@ def index():
 
 @app.route('/test')
 def test():
-    """Test route to verify app is running"""
-    mongo_status = "connected" if files_collection else "disconnected"
+    """Test route to verify app is running and MongoDB is connected"""
+    mongo_status = "✓ connected" if files_collection else "✗ disconnected"
     return jsonify({
         'status': 'ok',
         'message': 'Flask app is running',
+        'mongodb_status': mongo_status,
+        'mongodb_uri_set': bool(MONGODB_URI),
+        'environment': 'VERCEL' if os.environ.get('VERCEL') else 'LOCAL',
         'templates_dir': app.template_folder,
         'templates_exist': os.path.exists(app.template_folder),
         'static_dir': app.static_folder,
-        'static_exist': os.path.exists(app.static_folder),
-        'mongodb_status': mongo_status,
-        'mongodb_uri_set': bool(MONGODB_URI)
+        'static_exist': os.path.exists(app.static_folder)
     }), 200
 
 
@@ -397,12 +403,14 @@ def files_page():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if not files_collection:
-        logger.error("MongoDB collection not available for upload")
-        return jsonify({'success': False, 'error': 'Database connection failed. Please check MongoDB URI in environment variables.'}), 503
+        logger.error("✗ MongoDB collection not available for upload")
+        return jsonify({
+            'success': False, 
+            'error': 'Database connection failed. MongoDB is not connected.'
+        }), 503
 
-    # Reject uploads larger than MAX_CONTENT_LENGTH early
     if request.content_length and request.content_length > app.config['MAX_CONTENT_LENGTH']:
-        return jsonify({'success': False, 'error': 'File too large'}), 413
+        return jsonify({'success': False, 'error': 'File too large (max 5 MB)'}), 413
 
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'No file provided'}), 400
@@ -470,7 +478,7 @@ def upload_file():
                 excel_filename = os.path.basename(excel_path)
                 file_id = save_file_to_mongodb(excel_path, excel_filename)
                 
-                logger.info(f"File saved to MongoDB with ID: {file_id}")
+                logger.info(f"✓ File saved to MongoDB with ID: {file_id}")
                 
                 # Delete uploaded CSV and processed Excel file after saving to MongoDB
                 try:
@@ -486,14 +494,14 @@ def upload_file():
                 # Return success response
                 return jsonify({'success': True, 'file_id': file_id}), 200
             except Exception as e:
-                logger.error(f"Error saving to MongoDB: {e}", exc_info=True)
+                logger.error(f"✗ Error saving to MongoDB: {e}", exc_info=True)
                 if os.path.exists(file_path):
                     os.remove(file_path)
                 if os.path.exists(excel_path):
                     os.remove(excel_path)
                 return jsonify({'success': False, 'error': f'Failed to save file: {str(e)}'}), 500
         except Exception as e:
-            logger.error(f"Upload error: {e}", exc_info=True)
+            logger.error(f"✗ Upload error: {e}", exc_info=True)
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -508,6 +516,9 @@ def upload_file():
 def download_file(file_id):
     """Download file from MongoDB"""
     try:
+        if not files_collection:
+            return jsonify({'success': False, 'error': 'Database not connected'}), 503
+        
         file_record = files_collection.find_one({'_id': ObjectId(file_id)})
         
         if not file_record:
@@ -523,7 +534,7 @@ def download_file(file_id):
             download_name=filename
         )
     except Exception as e:
-        logger.error(f"Error downloading file: {e}")
+        logger.error(f"✗ Error downloading file: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -534,7 +545,7 @@ def get_files():
         logger.info("Fetching files from MongoDB...")
         
         if not files_collection:
-            logger.error("MongoDB collection not available")
+            logger.error("✗ MongoDB collection not available")
             return jsonify({
                 'success': False, 
                 'files': [], 
@@ -548,7 +559,7 @@ def get_files():
             '_id': 1
         }).sort('upload_date', -1))
         
-        logger.info(f"Found {len(files)} files in MongoDB")
+        logger.info(f"✓ Found {len(files)} files in MongoDB")
         
         result_files = []
         for file in files:
@@ -564,10 +575,10 @@ def get_files():
                 logger.warning(f"Error processing file record: {e}")
                 continue
         
-        logger.info(f"Successfully converted {len(result_files)} files to JSON format")
+        logger.info(f"✓ Successfully converted {len(result_files)} files to JSON")
         return jsonify({'success': True, 'files': result_files}), 200
     except Exception as e:
-        logger.error(f"Error fetching files: {str(e)}", exc_info=True)
+        logger.error(f"✗ Error fetching files: {str(e)}", exc_info=True)
         return jsonify({
             'success': False, 
             'files': [], 
@@ -579,14 +590,18 @@ def get_files():
 def delete_file_api(file_id):
     """Delete a file from MongoDB"""
     try:
+        if not files_collection:
+            return jsonify({'success': False, 'message': 'Database not connected'}), 503
+        
         result = files_collection.delete_one({'_id': ObjectId(file_id)})
         
         if result.deleted_count > 0:
+            logger.info(f"✓ File deleted: {file_id}")
             return jsonify({'success': True, 'message': 'File deleted successfully'})
         else:
             return jsonify({'success': False, 'message': 'File not found'}), 404
     except Exception as e:
-        logger.error(f"Error deleting file: {e}")
+        logger.error(f"✗ Error deleting file: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -608,7 +623,7 @@ def health_check():
             'timestamp': pd.Timestamp.now().isoformat()
         }), 200
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"✗ Health check failed: {e}")
         return jsonify({
             'status': 'unhealthy',
             'mongodb': 'disconnected',
